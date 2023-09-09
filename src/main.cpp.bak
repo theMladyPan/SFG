@@ -8,7 +8,6 @@
 #include "rubint.h"
 #include <BMI160Gen.h>
 
-SET_LOOP_TASK_STACK_SIZE(32*1024); // 16KB
 
 TFT_eSPI tft = TFT_eSPI(135, 240);
 
@@ -20,7 +19,8 @@ const double sampling_period_us = round(interval*1000000);
 const double max_amplitude = 2;
 const double warn_amplitude = 1.5;
 
-void update_min_max(double *vReal, uint16_t samples, double *max, double *min) {
+void update_min_max(double *vReal, uint16_t samples, double *max, double *min)
+{
   for (uint16_t i = 0; i < samples; i++)
   {
     if(vReal[i] > *max)
@@ -30,15 +30,16 @@ void update_min_max(double *vReal, uint16_t samples, double *max, double *min) {
   }
 }
 
-float convertRawAccel(int aRaw, double gain = 1.0) {
-    double g = (aRaw * 2.0) / 32768.0;
-    double acc = g * 9.81;
-    return acc * gain;
+float convertRawGyro(int gRaw) {
+    float g = (gRaw * 1000.0) / 32768.0;
+    return g;
 }
 
-double vectorLength(double &x, double &y, double &z) {
-  return std::sqrt(x*x + y*y + z*z);
+float convertRawAccel(int aRaw) {
+    float a = (aRaw * 2.0) / 32768.0;
+    return a;
 }
+
 
 void setup() {
   Wire.begin(21, 22, (int)4e5);
@@ -66,6 +67,7 @@ void setup() {
 }
 
 void loop() {
+  /*
   gpio_num_t led_ok = GPIO_NUM_25; 
   gpio_num_t led_warn = GPIO_NUM_26;
   gpio_num_t led_err = GPIO_NUM_27;
@@ -73,14 +75,18 @@ void loop() {
   gpio_set_direction(led_ok, GPIO_MODE_OUTPUT);
   gpio_set_direction(led_warn, GPIO_MODE_OUTPUT);
   gpio_set_direction(led_err, GPIO_MODE_OUTPUT);
-  
+  */
+
+  int gxRaw, gyRaw, gzRaw;         // raw gyro values
   int axRaw, ayRaw, azRaw;         // raw accelerometer values
+
+  float gx = 0, gy = 0, gz = 0;
   float ax = 0, ay = 0, az = 0;
-  double gain = 1.0;
 
   tft.fillScreen(TFT_BLACK);
   tft.drawString("Calibrating ...", 0, 50, 4);
   ESP_LOGI("main", "Calibrating...");
+  
   uint64_t timestamp;
   const uint16_t n_calib_samples = 200;
   std::array<double, n_calib_samples> x_calib, y_calib, z_calib;
@@ -120,14 +126,10 @@ void loop() {
   z_null /= n_calib_samples * .8;
   
   ESP_LOGI("main", "Calibration done! Xnull: %f, Ynull: %f, Znull: %f", x_null, y_null, z_null);
-  double measuredGravity = vectorLength(x_null, y_null, z_null);
-  ESP_LOGI("main", "Gravity: %f", measuredGravity);
-  gain = 9.81 / measuredGravity;
-  ESP_LOGI("main", "Calibrated gain: %f", gain);
+  ESP_LOGI("main", "Gravity: %f", sqrt(x_null*x_null + y_null*y_null + z_null*z_null));
   tft.drawString("Calibration done!", 0, 50, 4);
   delay(5e2);
   tft.fillScreen(TFT_BLACK);
-
 
   while(1) {
     /*
@@ -144,9 +146,9 @@ void loop() {
     {
       timestamp = esp_timer_get_time();  
       BMI160.readAccelerometer(axRaw, ayRaw, azRaw);
-      ax = convertRawAccel(axRaw, gain);
-      ay = convertRawAccel(ayRaw, gain);
-      az = convertRawAccel(azRaw, gain);
+      ax = convertRawAccel(axRaw);
+      ay = convertRawAccel(ayRaw);
+      az = convertRawAccel(azRaw);
       
       double x_clean, y_clean, z_clean;
       x_clean = ax - x_null;
@@ -178,25 +180,18 @@ void loop() {
     double ampl = max - min;
     if(ampl >= max_amplitude) {
       tft.setTextColor(TFT_RED, TFT_BLACK);
-      gpio_set_level(led_err, 1);
-      gpio_set_level(led_warn, 0);
-      gpio_set_level(led_ok, 0);
-
-      tft.drawString("Peak f : ", 0, 0, 4);
-      tft.drawString(String(f, 1) + "Hz       ", 100, 0, 4);
-      tft.drawString("Magn.  : ", 0, 40, 4);
-      tft.drawString(String(v, 3) + "       ", 100, 40, 4);
-      tft.drawString("Ampl.  : ", 0, 80, 4);
-      tft.drawString(String(ampl, 3) + "m.s^2       ", 100, 80, 4);
+      //gpio_set_level(led_err, 1);
+      //gpio_set_level(led_warn, 0);
+      //gpio_set_level(led_ok, 0);
       break;
     }
     else if (ampl >= warn_amplitude) {
       tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-      gpio_set_level(led_warn, 1);
+      //gpio_set_level(led_warn, 1);
     }
     else {
       tft.setTextColor(TFT_GREEN, TFT_BLACK);
-      gpio_set_level(led_ok, 1);
+      //gpio_set_level(led_ok, 1);
     }
 
     tft.drawString("Peak f : ", 0, 0, 4);
@@ -207,8 +202,4 @@ void loop() {
     tft.drawString(String(ampl, 3) + "m.s^2       ", 100, 80, 4);
   }
   ESP_LOGW("main", "Maximal amplitude reached! Exiting...");
-  while(1) {
-    delay(100);
-  }
-  
 }
