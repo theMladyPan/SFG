@@ -12,7 +12,7 @@ SET_LOOP_TASK_STACK_SIZE(32*1024); // 16KB
 
 TFT_eSPI tft = TFT_eSPI(135, 240);
 
-const uint16_t samples = 1024; // This value MUST ALWAYS be a power of 2
+const uint16_t samples = 512; // This value MUST ALWAYS be a power of 2
 const double samplingFrequency = 1024; // Hz
 const double interval = 1/samplingFrequency;
 const double sampling_period_us = round(interval*1000000);
@@ -63,6 +63,7 @@ void setup() {
   BMI160.setFullScaleGyroRange(BMI160_GYRO_RANGE_1000);
   ESP_LOGD("main", "Setting accelerometer range done.");
   BMI160.setFullScaleAccelRange(BMI160_ACCEL_RANGE_2G);
+  delay(1e3);
 }
 
 void loop() {
@@ -78,11 +79,10 @@ void loop() {
   float ax = 0, ay = 0, az = 0;
   double gain = 1.0;
 
-  tft.fillScreen(TFT_BLACK);
   tft.drawString("Calibrating ...", 0, 50, 4);
   ESP_LOGI("main", "Calibrating...");
   uint64_t timestamp;
-  const uint16_t n_calib_samples = 200;
+  const uint16_t n_calib_samples = 500;
   std::array<double, n_calib_samples> x_calib, y_calib, z_calib;
 
   // get calibration data - device should be still
@@ -127,7 +127,10 @@ void loop() {
   tft.drawString("Calibration done!", 0, 50, 4);
   delay(5e2);
   tft.fillScreen(TFT_BLACK);
-
+  tft.setTextColor(TFT_GREEN, TFT_BLACK);
+  x_null *= gain;
+  y_null *= gain;
+  z_null *= gain;
 
   while(1) {
     /*
@@ -162,7 +165,7 @@ void loop() {
 
     double max = -INFINITY, min = INFINITY;
     update_min_max(vReal, samples, &max, &min);
-    ESP_LOGI("main", "Sampling done in %.3fs! max: %.3fm/s, min: %.3fm/s", esp_timer_get_time() - t_start, max, min);
+    ESP_LOGI("main", "Sampling done in %.3fms! max: %.3fm/s, min: %.3fm/s", (esp_timer_get_time() - t_start) / 1000, max, min);
     ESP_LOGI("main", "Computing FFT...");
 
     arduinoFFT FFT = arduinoFFT(vReal, vImag, samples, samplingFrequency);
@@ -195,7 +198,6 @@ void loop() {
       gpio_set_level(led_warn, 1);
     }
     else {
-      tft.setTextColor(TFT_GREEN, TFT_BLACK);
       gpio_set_level(led_ok, 1);
     }
 
